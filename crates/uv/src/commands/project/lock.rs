@@ -110,7 +110,7 @@ pub(crate) async fn lock(
 
     // Resolve the requirements.
     let resolution = project::resolve(
-        spec,
+        &spec,
         &hasher,
         &interpreter,
         tags,

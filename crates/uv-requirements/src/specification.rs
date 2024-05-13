@@ -1,3 +1,4 @@
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -120,14 +121,12 @@ impl RequirementsSpecification {
                 }
             }
             RequirementsSource::PyprojectToml(path) => {
-                let project_workspace = ProjectWorkspace::discover(
-                    path.parent().expect("pyproject.toml must have a parent"),
-                )?;
+                let project_workspace = ProjectWorkspace::from_pyproject_toml(path)?;
                 // TODO(konsti): Should we avoid reading pyproject.toml twice?
                 let contents = uv_fs::read_to_string(&path).await?;
                 Self::parse_direct_pyproject_toml(
                     &contents,
-                    &project_workspace,
+                    project_workspace.as_ref(),
                     extras,
                     path.as_ref(),
                     preview,
@@ -161,7 +160,7 @@ impl RequirementsSpecification {
     /// support).
     pub(crate) fn parse_direct_pyproject_toml(
         contents: &str,
-        project_workspace: &ProjectWorkspace,
+        project_workspace: Option<&ProjectWorkspace>,
         extras: &ExtrasSpecification,
         pyproject_path: &Path,
         preview: PreviewMode,
@@ -176,63 +175,80 @@ impl RequirementsSpecification {
             .parent()
             .context("`pyproject.toml` has no parent directory")?;
 
-        match Pep621Metadata::try_from(
+        let workspace_sources = project_workspace
+            .map(|x| x.workspace_sources().clone())
+            .unwrap_or_default();
+        let workspace_packages = project_workspace
+            .map(|x| x.workspace_packages().clone())
+            .unwrap_or_default();
+
+        let Some(project) = Pep621Metadata::try_from(
             pyproject,
             extras,
             pyproject_path,
             project_dir,
-            &project_workspace.workspace_sources(),
-            &project_workspace.workspace_packages(),
+            &workspace_sources,
+            &workspace_packages,
             preview,
-        ) {
-            Ok(Some(project)) => {
-                // Partition into editable and non-editable requirements.
-                let (editables, requirements): (Vec<_>, Vec<_>) = project
-                    .requirements
-                    .into_iter()
-                    .partition_map(|requirement| {
-                        if let RequirementSource::Path {
-                            path,
-                            editable: true,
-                            url,
-                        } = requirement.source
-                        {
-                            Either::Left(EditableRequirement {
-                                url,
-                                path,
-                                extras: requirement.extras,
-                                origin: requirement.origin,
-                            })
-                        } else {
-                            Either::Right(UnresolvedRequirementSpecification {
-                                requirement: UnresolvedRequirement::Named(requirement),
-                                hashes: vec![],
-                            })
-                        }
-                    });
+        )?
+        else {
+            debug!(
+                "Dynamic pyproject.toml at: `{}`",
+                pyproject_path.user_display()
+            );
+            return Ok(Self {
+                project: None,
+                requirements: vec![],
+                source_trees: vec![pyproject_path.to_path_buf()],
+                ..Self::default()
+            });
+        };
 
-                Ok(Self {
-                    project: Some(project.name),
-                    editables,
-                    requirements,
-                    extras: project.used_extras,
-                    ..Self::default()
-                })
+        // Partition into editable and non-editable requirements.
+        let (mut editables, mut requirements): (Vec<_>, Vec<_>) = project
+            .requirements
+            .into_iter()
+            .partition_map(|requirement| {
+                if let RequirementSource::Path {
+                    path,
+                    editable: true,
+                    url,
+                } = requirement.source
+                {
+                    Either::Left(EditableRequirement {
+                        url,
+                        path,
+                        extras: requirement.extras,
+                        origin: requirement.origin,
+                    })
+                } else {
+                    Either::Right(UnresolvedRequirementSpecification {
+                        requirement: UnresolvedRequirement::Named(requirement),
+                        hashes: vec![],
+                    })
+                }
+            });
+
+        // Consider a requirement on A in a workspace with workspace packages A, B, C where
+        // A -> B and B -> C. We have to perform a DAG traversal to collect all editables.
+        let mut seen_editables: HashSet<_> = [project_dir.to_path_buf()].into_iter().collect();
+        let mut stack = VecDeque::from(editables.clone());
+
+        while let Some(pyproject) = stack.pop_front() {
+            if !seen_editables.insert(pyproject.path) {
+                continue;
             }
-            Ok(None) => {
-                debug!(
-                    "Dynamic pyproject.toml at: `{}`",
-                    pyproject_path.user_display()
-                );
-                Ok(Self {
-                    project: None,
-                    requirements: vec![],
-                    source_trees: vec![pyproject_path.to_path_buf()],
-                    ..Self::default()
-                })
-            }
-            Err(err) => Err(err.into()),
+
+            // TODO(konsti): Here we implement the recursive path dep collection
         }
+
+        Ok(Self {
+            project: Some(project.name),
+            editables,
+            requirements,
+            extras: project.used_extras,
+            ..Self::default()
+        })
     }
 
     /// Read the combined requirements and constraints from a set of sources.

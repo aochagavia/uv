@@ -81,7 +81,6 @@ impl Project {
         // TODO(konsti): Get rid of to string lossy
         vec![
             // TODO(konsti): The editable alone should be enough
-            RequirementsSource::from_requirements_file(self.path.clone()),
             RequirementsSource::Editable(self.root.to_string_lossy().to_string()),
         ]
     }

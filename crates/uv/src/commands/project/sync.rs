@@ -89,6 +89,7 @@ pub(crate) async fn sync(
     // Sync the environment.
     project::install(
         &resolution,
+        Vec::new(), // TODO(konsti): Support editables
         SitePackages::from_executable(&venv)?,
         &no_binary,
         link_mode,

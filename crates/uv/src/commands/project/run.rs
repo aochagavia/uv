@@ -1,29 +1,35 @@
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::fmt::Write;
+use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use itertools::Itertools;
+use owo_colors::OwoColorize;
 use tempfile::tempdir_in;
 use tokio::process::Command;
 use tracing::debug;
 
-use distribution_types::{IndexLocations, Resolution};
+use distribution_types::{IndexLocations, LocalEditable, LocalEditables, Resolution};
 use install_wheel_rs::linker::LinkMode;
+use platform_tags::Tags;
+use requirements_txt::EditableRequirement;
 use uv_cache::Cache;
-use uv_client::{BaseClientBuilder, RegistryClientBuilder};
+use uv_client::{BaseClientBuilder, RegistryClient, RegistryClientBuilder};
 use uv_configuration::{
     Concurrency, ConfigSettings, NoBinary, NoBuild, PreviewMode, SetupPyStrategy,
 };
 use uv_dispatch::BuildDispatch;
-use uv_installer::{SatisfiesResult, SitePackages};
-use uv_interpreter::PythonEnvironment;
+use uv_distribution::DistributionDatabase;
+use uv_installer::{BuiltEditable, Downloader, SatisfiesResult, SitePackages};
+use uv_interpreter::{Interpreter, PythonEnvironment};
 use uv_requirements::{ExtrasSpecification, RequirementsSource, RequirementsSpecification};
 use uv_resolver::{FlatIndex, InMemoryIndex, OptionsBuilder};
 use uv_types::{BuildIsolation, HashStrategy, InFlight};
 use uv_warnings::warn_user;
 
 use crate::commands::project::discovery::Project;
-use crate::commands::{project, ExitStatus};
+use crate::commands::reporters::DownloadReporter;
+use crate::commands::{elapsed, project, ExitStatus};
 use crate::printer::Printer;
 
 /// Run a command.
@@ -184,6 +190,81 @@ pub(crate) async fn run(
     }
 }
 
+/// Build a set of editable distributions.
+#[allow(clippy::too_many_arguments)]
+async fn build_editables(
+    editables: &[EditableRequirement],
+    editable_wheel_dir: &Path,
+    hasher: &HashStrategy,
+    cache: &Cache,
+    interpreter: &Interpreter,
+    tags: &Tags,
+    concurrency: Concurrency,
+    client: &RegistryClient,
+    build_dispatch: &BuildDispatch<'_>,
+    printer: Printer,
+) -> anyhow::Result<Vec<BuiltEditable>> {
+    let start = std::time::Instant::now();
+
+    let downloader = Downloader::new(
+        cache,
+        tags,
+        hasher,
+        DistributionDatabase::new(client, build_dispatch, concurrency.downloads),
+    )
+    .with_reporter(DownloadReporter::from(printer).with_length(editables.len() as u64));
+
+    let editables = LocalEditables::from_editables(editables.iter().map(|editable| {
+        let EditableRequirement {
+            url,
+            extras,
+            path,
+            origin: _,
+        } = editable;
+        LocalEditable {
+            url: url.clone(),
+            extras: extras.clone(),
+            path: path.clone(),
+        }
+    }));
+
+    let editables: Vec<_> = downloader
+        .build_editables(editables, editable_wheel_dir)
+        .await
+        .context("Failed to build editables")?
+        .into_iter()
+        .collect();
+
+    // Validate that the editables are compatible with the target Python version.
+    for editable in &editables {
+        if let Some(python_requires) = editable.metadata.requires_python.as_ref() {
+            if !python_requires.contains(interpreter.python_version()) {
+                return Err(anyhow!(
+                    "Editable `{}` requires Python {}, but {} is installed",
+                    editable.metadata.name,
+                    python_requires,
+                    interpreter.python_version()
+                )
+                .into());
+            }
+        }
+    }
+
+    let s = if editables.len() == 1 { "" } else { "s" };
+    writeln!(
+        printer.stderr(),
+        "{}",
+        format!(
+            "Built {} in {}",
+            format!("{} editable{}", editables.len(), s).bold(),
+            elapsed(start.elapsed())
+        )
+        .dimmed()
+    )?;
+
+    Ok(editables)
+}
+
 /// Update a [`PythonEnvironment`] to satisfy a set of [`RequirementsSource`]s.
 async fn update_environment(
     venv: PythonEnvironment,
@@ -292,7 +373,7 @@ async fn update_environment(
 
     // Resolve the requirements.
     let resolution = match project::resolve(
-        spec,
+        &spec,
         &hasher,
         &interpreter,
         tags,
@@ -311,12 +392,31 @@ async fn update_environment(
         Err(err) => return Err(err.into()),
     };
 
+    // Build all editable distributions. The editables are shared between resolution and
+    // installation, and should live for the duration of the command. If an editable is already
+    // installed in the environment, we'll still re-build it here.
+    let editable_wheel_dir = tempdir_in(cache.root())?;
+    let editables = build_editables(
+        &spec.editables,
+        editable_wheel_dir.path(),
+        &hasher,
+        &cache,
+        &interpreter,
+        &tags,
+        concurrency,
+        &client,
+        &build_dispatch,
+        printer,
+    )
+    .await?;
+
     // Re-initialize the in-flight map.
     let in_flight = InFlight::default();
 
     // Sync the environment.
     project::install(
         &resolution,
+        editables,
         SitePackages::from_executable(&venv)?,
         &no_binary,
         link_mode,

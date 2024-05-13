@@ -15,7 +15,7 @@ use uv_configuration::{Concurrency, Constraints, NoBinary, Overrides, Reinstall}
 use uv_dispatch::BuildDispatch;
 use uv_distribution::DistributionDatabase;
 use uv_fs::Simplified;
-use uv_installer::{Downloader, Plan, Planner, SitePackages};
+use uv_installer::{BuiltEditable, Downloader, Plan, Planner, ResolvedEditable, SitePackages};
 use uv_interpreter::{find_default_python, Interpreter, PythonEnvironment};
 use uv_requirements::{
     ExtrasSpecification, LookaheadResolver, NamedRequirementsResolver, RequirementsSpecification,
@@ -114,7 +114,7 @@ pub(crate) fn init(
 /// Resolve a set of requirements, similar to running `pip compile`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn resolve(
-    spec: RequirementsSpecification,
+    spec: &RequirementsSpecification,
     hasher: &HashStrategy,
     interpreter: &Interpreter,
     tags: &Tags,
@@ -141,7 +141,7 @@ pub(crate) async fn resolve(
     let requirements = {
         // Convert from unnamed to named requirements.
         let mut requirements = NamedRequirementsResolver::new(
-            spec.requirements,
+            spec.requirements.clone(),
             hasher,
             index,
             DistributionDatabase::new(client, build_dispatch, concurrency.downloads),
@@ -154,7 +154,7 @@ pub(crate) async fn resolve(
         if !spec.source_trees.is_empty() {
             requirements.extend(
                 SourceTreeResolver::new(
-                    spec.source_trees,
+                    spec.source_trees.clone(),
                     &ExtrasSpecification::None,
                     hasher,
                     index,
@@ -189,7 +189,7 @@ pub(crate) async fn resolve(
         constraints,
         overrides,
         preferences,
-        spec.project,
+        spec.project.clone(),
         editables,
         exclusions,
         lookaheads,
@@ -242,6 +242,7 @@ pub(crate) async fn resolve(
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn install(
     resolution: &Resolution,
+    built_editables: Vec<BuiltEditable>,
     site_packages: SitePackages<'_>,
     no_binary: &NoBinary,
     link_mode: LinkMode,
@@ -260,9 +261,16 @@ pub(crate) async fn install(
 
     let requirements = resolution.requirements();
 
+    // Map the built editables to their resolved form.
+    let editables = built_editables
+        .into_iter()
+        .map(ResolvedEditable::Built)
+        .collect::<Vec<_>>();
+
     // Partition into those that should be linked from the cache (`local`), those that need to be
     // downloaded (`remote`), and those that should be removed (`extraneous`).
     let plan = Planner::with_requirements(&requirements)
+        .with_editable_requirements(&editables)
         .build(
             site_packages,
             &Reinstall::None,
