@@ -1,0 +1,4 @@
+[project]
+name = "abatross"
+version = "0.1.0"
+dependencies = ["tqdm>=4,<5"]

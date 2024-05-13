@@ -160,7 +160,7 @@ impl RequirementSatisfaction {
                     return Ok(Self::Mismatch);
                 };
 
-                if requested_editable != installed_editable {
+                if *requested_editable != installed_editable.unwrap_or_default() {
                     return Ok(Self::Mismatch);
                 }
 

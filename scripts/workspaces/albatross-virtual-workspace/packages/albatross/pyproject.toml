@@ -1,0 +1,7 @@
+[project]
+name = "abatross"
+version = "0.1.0"
+dependencies = ["bird-feeder", "tqdm>=4,<5"]
+
+[tool.uv.sources]
+bird-feeder = { workspace = true }

@@ -170,6 +170,7 @@ impl<'a, Context: BuildContext> LookaheadResolver<'a, Context> {
             RequirementSource::Path {
                 path: _,
                 url,
+                // TODO(konsti): Why?
                 editable: _,
             } => Dist::from_file_url(requirement.name, url, false)?,
         };

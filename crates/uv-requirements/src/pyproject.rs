@@ -6,7 +6,7 @@
 //!
 //! Then lowers them into a dependency specification.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
+use crate::discovery::WorkspaceMember;
 use distribution_types::{ParsedUrlError, Requirement, RequirementSource, Requirements};
 use pep440_rs::VersionSpecifiers;
 use pep508_rs::{RequirementOrigin, VerbatimUrl, VersionOrUrl};
@@ -61,8 +62,8 @@ pub enum LoweringError {
     InvalidUrl(#[from] url::ParseError),
     #[error("Can't combine URLs from both `project.dependencies` and `tool.uv.sources`")]
     ConflictingUrls,
-    #[error("Could not normalize path: `{0}`")]
-    AbsolutizeError(String, #[source] io::Error),
+    #[error("Could not normalize path: `{}`", _0.user_display())]
+    AbsolutizeError(PathBuf, #[source] io::Error),
     #[error("Fragments are not allowed in URLs: `{0}`")]
     ForbiddenFragment(Url),
     #[error("`workspace = false` is not yet supported")]
@@ -110,7 +111,7 @@ pub struct Tool {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ToolUv {
-    pub sources: Option<HashMap<PackageName, Source>>,
+    pub sources: Option<BTreeMap<PackageName, Source>>,
     pub workspace: Option<ToolUvWorkspace>,
 }
 
@@ -238,8 +239,8 @@ impl Pep621Metadata {
         extras: &ExtrasSpecification,
         pyproject_path: &Path,
         project_dir: &Path,
-        workspace_sources: &HashMap<PackageName, Source>,
-        workspace_packages: &HashMap<PackageName, String>,
+        workspace_sources: &BTreeMap<PackageName, Source>,
+        workspace_packages: &BTreeMap<PackageName, WorkspaceMember>,
         preview: PreviewMode,
     ) -> Result<Option<Self>, Pep621Error> {
         let project_sources = pyproject
@@ -323,9 +324,9 @@ pub(crate) fn lower_requirements(
     pyproject_path: &Path,
     project_name: &PackageName,
     project_dir: &Path,
-    project_sources: &HashMap<PackageName, Source>,
-    workspace_sources: &HashMap<PackageName, Source>,
-    workspace_packages: &HashMap<PackageName, String>,
+    project_sources: &BTreeMap<PackageName, Source>,
+    workspace_sources: &BTreeMap<PackageName, Source>,
+    workspace_packages: &BTreeMap<PackageName, WorkspaceMember>,
     preview: PreviewMode,
 ) -> Result<Requirements, Pep621Error> {
     let dependencies = dependencies
@@ -386,9 +387,9 @@ pub(crate) fn lower_requirement(
     requirement: pep508_rs::Requirement,
     project_name: &PackageName,
     project_dir: &Path,
-    project_sources: &HashMap<PackageName, Source>,
-    workspace_sources: &HashMap<PackageName, Source>,
-    workspace_packages: &HashMap<PackageName, String>,
+    project_sources: &BTreeMap<PackageName, Source>,
+    workspace_sources: &BTreeMap<PackageName, Source>,
+    workspace_packages: &BTreeMap<PackageName, WorkspaceMember>,
     preview: PreviewMode,
 ) -> Result<Requirement, LoweringError> {
     let source = project_sources
@@ -495,7 +496,7 @@ pub(crate) fn lower_requirement(
             if matches!(requirement.version_or_url, Some(VersionOrUrl::Url(_))) {
                 return Err(LoweringError::ConflictingUrls);
             }
-            path_source(path, project_dir, editable)?
+            path_source(&Path::new(&path), project_dir, editable.unwrap_or(false))?
         }
         Source::Registry { index } => match requirement.version_or_url {
             None => {
@@ -528,7 +529,7 @@ pub(crate) fn lower_requirement(
                 .get(&requirement.name)
                 .ok_or(LoweringError::UndeclaredWorkspacePackage)?
                 .clone();
-            path_source(path, project_dir, editable)?
+            path_source(&path.root, project_dir, editable.unwrap_or(true))?
         }
         Source::CatchAll { .. } => {
             // Emit a dedicated error message, which is an improvement over Serde's default error.
@@ -546,15 +547,16 @@ pub(crate) fn lower_requirement(
 
 /// Convert a path string to a path section.
 fn path_source(
-    path: String,
+    path: &Path,
     project_dir: &Path,
-    editable: Option<bool>,
+    editable: bool,
 ) -> Result<RequirementSource, LoweringError> {
-    let url = VerbatimUrl::parse_path(&path, project_dir).with_given(path.clone());
+    let url =
+        VerbatimUrl::parse_path(&path, project_dir).with_given(path.to_string_lossy().to_string());
     let path_buf = PathBuf::from(&path);
     let path_buf = path_buf
         .absolutize_from(project_dir)
-        .map_err(|err| LoweringError::AbsolutizeError(path, err))?
+        .map_err(|err| LoweringError::AbsolutizeError(path.to_path_buf(), err))?
         .to_path_buf();
     Ok(RequirementSource::Path {
         path: path_buf,
@@ -655,6 +657,7 @@ mod serde_from_and_to_string {
 #[cfg(test)]
 mod test {
     use std::path::Path;
+    use std::str::FromStr;
 
     use anyhow::Context;
     use indoc::indoc;
@@ -662,7 +665,9 @@ mod test {
 
     use uv_configuration::PreviewMode;
     use uv_fs::Simplified;
+    use uv_normalize::PackageName;
 
+    use crate::discovery::ProjectWorkspace;
     use crate::{ExtrasSpecification, RequirementsSpecification};
 
     fn from_source(
@@ -673,6 +678,7 @@ mod test {
         let path = uv_fs::absolutize_path(path.as_ref())?;
         RequirementsSpecification::parse_direct_pyproject_toml(
             contents,
+            &ProjectWorkspace::dummy(path.as_ref(), &PackageName::from_str("foo").unwrap()),
             extras,
             path.as_ref(),
             PreviewMode::Enabled,

@@ -171,7 +171,7 @@ pub enum RequirementSource {
     Path {
         path: PathBuf,
         /// For a source tree (a directory), whether to install as an editable.
-        editable: Option<bool>,
+        editable: bool,
         /// The PEP 508 style URL in the format
         /// `file:///<path>#subdirectory=<subdirectory>`.
         url: VerbatimUrl,
@@ -186,7 +186,7 @@ impl RequirementSource {
             ParsedUrl::LocalFile(local_file) => RequirementSource::Path {
                 path: local_file.path,
                 url,
-                editable: None,
+                editable: false,
             },
             ParsedUrl::Git(git) => RequirementSource::Git {
                 url,

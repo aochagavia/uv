@@ -1,0 +1,7 @@
+pyproject.toml
+src/abatross.egg-info/PKG-INFO
+src/abatross.egg-info/SOURCES.txt
+src/abatross.egg-info/dependency_links.txt
+src/abatross.egg-info/requires.txt
+src/abatross.egg-info/top_level.txt
+src/albatross/__init__.py

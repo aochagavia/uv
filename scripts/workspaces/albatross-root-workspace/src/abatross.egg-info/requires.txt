@@ -1,0 +1,2 @@
+bird-feeder
+tqdm<5,>=4

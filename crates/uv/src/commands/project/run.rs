@@ -207,6 +207,7 @@ async fn update_environment(
         preview,
     )
     .await?;
+    dbg!(&spec);
 
     // Check if the current environment satisfies the requirements
     let site_packages = SitePackages::from_executable(&venv)?;

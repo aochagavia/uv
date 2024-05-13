@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -20,6 +19,7 @@ use uv_configuration::{NoBinary, NoBuild, PreviewMode};
 use uv_fs::Simplified;
 use uv_normalize::{ExtraName, PackageName};
 
+use crate::discovery::ProjectWorkspace;
 use crate::pyproject::{Pep621Metadata, PyProjectToml};
 use crate::{ExtrasSpecification, RequirementsSource};
 
@@ -120,9 +120,19 @@ impl RequirementsSpecification {
                 }
             }
             RequirementsSource::PyprojectToml(path) => {
+                let project_workspace = ProjectWorkspace::discover(
+                    path.parent().expect("pyproject.toml must have a parent"),
+                )?;
+                // TODO(konsti): Should we avoid reading pyproject.toml twice?
                 let contents = uv_fs::read_to_string(&path).await?;
-                Self::parse_direct_pyproject_toml(&contents, extras, path.as_ref(), preview)
-                    .with_context(|| format!("Failed to parse `{}`", path.user_display()))?
+                Self::parse_direct_pyproject_toml(
+                    &contents,
+                    &project_workspace,
+                    extras,
+                    path.as_ref(),
+                    preview,
+                )
+                .with_context(|| format!("Failed to parse `{}`", path.user_display()))?
             }
             RequirementsSource::SetupPy(path) | RequirementsSource::SetupCfg(path) => Self {
                 source_trees: vec![path.clone()],
@@ -151,6 +161,7 @@ impl RequirementsSpecification {
     /// support).
     pub(crate) fn parse_direct_pyproject_toml(
         contents: &str,
+        project_workspace: &ProjectWorkspace,
         extras: &ExtrasSpecification,
         pyproject_path: &Path,
         preview: PreviewMode,
@@ -165,15 +176,13 @@ impl RequirementsSpecification {
             .parent()
             .context("`pyproject.toml` has no parent directory")?;
 
-        let workspace_sources = HashMap::default();
-        let workspace_packages = HashMap::default();
         match Pep621Metadata::try_from(
             pyproject,
             extras,
             pyproject_path,
             project_dir,
-            &workspace_sources,
-            &workspace_packages,
+            &project_workspace.workspace_sources(),
+            &project_workspace.workspace_packages(),
             preview,
         ) {
             Ok(Some(project)) => {
@@ -184,7 +193,7 @@ impl RequirementsSpecification {
                     .partition_map(|requirement| {
                         if let RequirementSource::Path {
                             path,
-                            editable: Some(true),
+                            editable: true,
                             url,
                         } = requirement.source
                         {

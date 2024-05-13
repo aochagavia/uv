@@ -39,8 +39,8 @@ impl Project {
             let pyproject_path = ancestor.join("pyproject.toml");
             if pyproject_path.exists() {
                 debug!(
-                    "Loading requirements from: {}",
-                    pyproject_path.user_display()
+                    "Loading requirements from: `{}`",
+                    pyproject_path.simplified_display()
                 );
 
                 // Read the `pyproject.toml`.
@@ -78,9 +78,11 @@ impl Project {
 
     /// Return the requirements for the project.
     pub(crate) fn requirements(&self) -> Vec<RequirementsSource> {
+        // TODO(konsti): Get rid of to string lossy
         vec![
+            // TODO(konsti): The editable alone should be enough
             RequirementsSource::from_requirements_file(self.path.clone()),
-            RequirementsSource::from_source_tree(self.root.clone()),
+            RequirementsSource::Editable(self.root.to_string_lossy().to_string()),
         ]
     }
 }

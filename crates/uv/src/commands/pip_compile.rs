@@ -130,15 +130,17 @@ pub(crate) async fn pip_compile(
         find_links,
         no_binary: _,
         no_build: specified_no_build,
-    } = RequirementsSpecification::from_sources(
-        requirements,
-        constraints,
-        overrides,
-        &extras,
-        &client_builder,
-        preview,
-    )
-    .await?;
+    } = dbg!(
+        RequirementsSpecification::from_sources(
+            requirements,
+            constraints,
+            overrides,
+            &extras,
+            &client_builder,
+            preview,
+        )
+        .await?,
+    );
 
     // If all the metadata could be statically resolved, validate that every extra was used. If we
     // need to resolve metadata via PEP 517, we don't know which extras are used until much later.
