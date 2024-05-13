@@ -8,7 +8,6 @@ use distribution_types::IndexLocations;
 use indexmap::{IndexMap, IndexSet};
 use owo_colors::OwoColorize;
 use pep440_rs::Version;
-use pubgrub::range::Range;
 use pubgrub::report::{DerivationTree, Derived, External, ReportFormatter};
 use pubgrub::term::Term;
 use pubgrub::type_aliases::Map;
@@ -19,7 +18,7 @@ use crate::candidate_selector::CandidateSelector;
 use crate::python_requirement::PythonRequirement;
 use crate::resolver::{IncompletePackage, UnavailablePackage, UnavailableReason};
 
-use super::PubGrubPackage;
+use super::{PubGrubPackage, Range};
 
 #[derive(Debug)]
 pub(crate) struct PubGrubReportFormatter<'a> {
@@ -30,14 +29,12 @@ pub(crate) struct PubGrubReportFormatter<'a> {
     pub(crate) python_requirement: Option<&'a PythonRequirement>,
 }
 
-impl ReportFormatter<PubGrubPackage, Range<Version>, UnavailableReason>
-    for PubGrubReportFormatter<'_>
-{
+impl ReportFormatter<PubGrubPackage, Range, UnavailableReason> for PubGrubReportFormatter<'_> {
     type Output = String;
 
     fn format_external(
         &self,
-        external: &External<PubGrubPackage, Range<Version>, UnavailableReason>,
+        external: &External<PubGrubPackage, Range, UnavailableReason>,
     ) -> Self::Output {
         match external {
             External::NotRoot(package, version) => {
@@ -151,7 +148,7 @@ impl ReportFormatter<PubGrubPackage, Range<Version>, UnavailableReason>
     }
 
     /// Try to print terms of an incompatibility in a human-readable way.
-    fn format_terms(&self, terms: &Map<PubGrubPackage, Term<Range<Version>>>) -> String {
+    fn format_terms(&self, terms: &Map<PubGrubPackage, Term<Range>>) -> String {
         let terms_vec: Vec<_> = terms.iter().collect();
         match terms_vec.as_slice() {
             [] | [(PubGrubPackage::Root(_), _)] => "the requirements are unsatisfiable".into(),
@@ -202,9 +199,9 @@ impl ReportFormatter<PubGrubPackage, Range<Version>, UnavailableReason>
     /// Simplest case, we just combine two external incompatibilities.
     fn explain_both_external(
         &self,
-        external1: &External<PubGrubPackage, Range<Version>, UnavailableReason>,
-        external2: &External<PubGrubPackage, Range<Version>, UnavailableReason>,
-        current_terms: &Map<PubGrubPackage, Term<Range<Version>>>,
+        external1: &External<PubGrubPackage, Range, UnavailableReason>,
+        external2: &External<PubGrubPackage, Range, UnavailableReason>,
+        current_terms: &Map<PubGrubPackage, Term<Range>>,
     ) -> String {
         let external = self.format_both_external(external1, external2);
         let terms = self.format_terms(current_terms);
@@ -220,10 +217,10 @@ impl ReportFormatter<PubGrubPackage, Range<Version>, UnavailableReason>
     fn explain_both_ref(
         &self,
         ref_id1: usize,
-        derived1: &Derived<PubGrubPackage, Range<Version>, UnavailableReason>,
+        derived1: &Derived<PubGrubPackage, Range, UnavailableReason>,
         ref_id2: usize,
-        derived2: &Derived<PubGrubPackage, Range<Version>, UnavailableReason>,
-        current_terms: &Map<PubGrubPackage, Term<Range<Version>>>,
+        derived2: &Derived<PubGrubPackage, Range, UnavailableReason>,
+        current_terms: &Map<PubGrubPackage, Term<Range>>,
     ) -> String {
         // TODO: order should be chosen to make it more logical.
 
@@ -247,9 +244,9 @@ impl ReportFormatter<PubGrubPackage, Range<Version>, UnavailableReason>
     fn explain_ref_and_external(
         &self,
         ref_id: usize,
-        derived: &Derived<PubGrubPackage, Range<Version>, UnavailableReason>,
-        external: &External<PubGrubPackage, Range<Version>, UnavailableReason>,
-        current_terms: &Map<PubGrubPackage, Term<Range<Version>>>,
+        derived: &Derived<PubGrubPackage, Range, UnavailableReason>,
+        external: &External<PubGrubPackage, Range, UnavailableReason>,
+        current_terms: &Map<PubGrubPackage, Term<Range>>,
     ) -> String {
         // TODO: order should be chosen to make it more logical.
 
@@ -269,8 +266,8 @@ impl ReportFormatter<PubGrubPackage, Range<Version>, UnavailableReason>
     /// Add an external cause to the chain of explanations.
     fn and_explain_external(
         &self,
-        external: &External<PubGrubPackage, Range<Version>, UnavailableReason>,
-        current_terms: &Map<PubGrubPackage, Term<Range<Version>>>,
+        external: &External<PubGrubPackage, Range, UnavailableReason>,
+        current_terms: &Map<PubGrubPackage, Term<Range>>,
     ) -> String {
         let external = self.format_external(external);
         let terms = self.format_terms(current_terms);
@@ -286,8 +283,8 @@ impl ReportFormatter<PubGrubPackage, Range<Version>, UnavailableReason>
     fn and_explain_ref(
         &self,
         ref_id: usize,
-        derived: &Derived<PubGrubPackage, Range<Version>, UnavailableReason>,
-        current_terms: &Map<PubGrubPackage, Term<Range<Version>>>,
+        derived: &Derived<PubGrubPackage, Range, UnavailableReason>,
+        current_terms: &Map<PubGrubPackage, Term<Range>>,
     ) -> String {
         let derived = self.format_terms(&derived.terms);
         let current = self.format_terms(current_terms);
@@ -303,9 +300,9 @@ impl ReportFormatter<PubGrubPackage, Range<Version>, UnavailableReason>
     /// Add an already explained incompat to the chain of explanations.
     fn and_explain_prior_and_external(
         &self,
-        prior_external: &External<PubGrubPackage, Range<Version>, UnavailableReason>,
-        external: &External<PubGrubPackage, Range<Version>, UnavailableReason>,
-        current_terms: &Map<PubGrubPackage, Term<Range<Version>>>,
+        prior_external: &External<PubGrubPackage, Range, UnavailableReason>,
+        external: &External<PubGrubPackage, Range, UnavailableReason>,
+        current_terms: &Map<PubGrubPackage, Term<Range>>,
     ) -> String {
         let external = self.format_both_external(prior_external, external);
         let terms = self.format_terms(current_terms);
@@ -322,8 +319,8 @@ impl PubGrubReportFormatter<'_> {
     /// Format two external incompatibilities, combining them if possible.
     fn format_both_external(
         &self,
-        external1: &External<PubGrubPackage, Range<Version>, UnavailableReason>,
-        external2: &External<PubGrubPackage, Range<Version>, UnavailableReason>,
+        external1: &External<PubGrubPackage, Range, UnavailableReason>,
+        external2: &External<PubGrubPackage, Range, UnavailableReason>,
     ) -> String {
         match (external1, external2) {
             (
@@ -373,11 +370,7 @@ impl PubGrubReportFormatter<'_> {
     }
 
     /// Simplify a [`Range`] of versions using the available versions for a package.
-    fn simplify_set<'a>(
-        &self,
-        set: &'a Range<Version>,
-        package: &PubGrubPackage,
-    ) -> Cow<'a, Range<Version>> {
+    fn simplify_set<'a>(&self, set: &'a Range, package: &PubGrubPackage) -> Cow<'a, Range> {
         if set == &Range::full() {
             Cow::Borrowed(set)
         } else {
@@ -391,7 +384,7 @@ impl PubGrubReportFormatter<'_> {
     /// their requirements.
     pub(crate) fn hints(
         &self,
-        derivation_tree: &DerivationTree<PubGrubPackage, Range<Version>, UnavailableReason>,
+        derivation_tree: &DerivationTree<PubGrubPackage, Range, UnavailableReason>,
         selector: &Option<CandidateSelector>,
         index_locations: &Option<IndexLocations>,
         unavailable_packages: &FxHashMap<PackageName, UnavailablePackage>,
@@ -565,7 +558,7 @@ pub(crate) enum PubGrubHint {
     PreReleaseRequested {
         package: PubGrubPackage,
         #[derivative(PartialEq = "ignore", Hash = "ignore")]
-        range: Range<Version>,
+        range: Range,
     },
     /// Requirements were unavailable due to lookups in the index being disabled and no extra
     /// index was provided via `--find-links`
@@ -722,7 +715,7 @@ impl std::fmt::Display for PubGrubHint {
 /// A [`Term`] and [`PubGrubPackage`] combination for display.
 struct PackageTerm<'a> {
     package: &'a PubGrubPackage,
-    term: &'a Term<Range<Version>>,
+    term: &'a Term<Range>,
 }
 
 impl std::fmt::Display for PackageTerm<'_> {
@@ -748,7 +741,7 @@ impl std::fmt::Display for PackageTerm<'_> {
 }
 
 impl PackageTerm<'_> {
-    fn new<'a>(package: &'a PubGrubPackage, term: &'a Term<Range<Version>>) -> PackageTerm<'a> {
+    fn new<'a>(package: &'a PubGrubPackage, term: &'a Term<Range>) -> PackageTerm<'a> {
         PackageTerm { package, term }
     }
 }
@@ -765,7 +758,7 @@ enum PackageRangeKind {
 #[derive(Debug)]
 struct PackageRange<'a> {
     package: &'a PubGrubPackage,
-    range: &'a Range<Version>,
+    range: &'a Range,
     kind: PackageRangeKind,
 }
 
@@ -833,10 +826,7 @@ impl std::fmt::Display for PackageRange<'_> {
 }
 
 impl PackageRange<'_> {
-    fn compatibility<'a>(
-        package: &'a PubGrubPackage,
-        range: &'a Range<Version>,
-    ) -> PackageRange<'a> {
+    fn compatibility<'a>(package: &'a PubGrubPackage, range: &'a Range) -> PackageRange<'a> {
         PackageRange {
             package,
             range,
@@ -844,7 +834,7 @@ impl PackageRange<'_> {
         }
     }
 
-    fn dependency<'a>(package: &'a PubGrubPackage, range: &'a Range<Version>) -> PackageRange<'a> {
+    fn dependency<'a>(package: &'a PubGrubPackage, range: &'a Range) -> PackageRange<'a> {
         PackageRange {
             package,
             range,
@@ -852,7 +842,7 @@ impl PackageRange<'_> {
         }
     }
 
-    fn available<'a>(package: &'a PubGrubPackage, range: &'a Range<Version>) -> PackageRange<'a> {
+    fn available<'a>(package: &'a PubGrubPackage, range: &'a Range) -> PackageRange<'a> {
         PackageRange {
             package,
             range,
@@ -860,11 +850,7 @@ impl PackageRange<'_> {
         }
     }
 
-    fn depends_on<'a>(
-        &'a self,
-        package: &'a PubGrubPackage,
-        range: &'a Range<Version>,
-    ) -> DependsOn<'a> {
+    fn depends_on<'a>(&'a self, package: &'a PubGrubPackage, range: &'a Range) -> DependsOn<'a> {
         DependsOn {
             package: self,
             dependency1: PackageRange::dependency(package, range),
@@ -885,7 +871,7 @@ impl<'a> DependsOn<'a> {
     /// Adds an additional dependency.
     ///
     /// Note this overwrites previous calls to `DependsOn::and`.
-    fn and(mut self, package: &'a PubGrubPackage, range: &'a Range<Version>) -> DependsOn<'a> {
+    fn and(mut self, package: &'a PubGrubPackage, range: &'a Range) -> DependsOn<'a> {
         self.dependency2 = Some(PackageRange::dependency(package, range));
         self
     }

@@ -8,7 +8,6 @@ use itertools::Itertools;
 use owo_colors::OwoColorize;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
-use pubgrub::range::Range;
 use pubgrub::solver::{Kind, State};
 use pubgrub::type_aliases::SelectedDependencies;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -29,7 +28,7 @@ use crate::editables::Editables;
 use crate::lock::{self, Lock, LockError};
 use crate::pins::FilePins;
 use crate::preferences::Preferences;
-use crate::pubgrub::{PubGrubDistribution, PubGrubPackage};
+use crate::pubgrub::{PubGrubDistribution, PubGrubPackage, Range};
 use crate::redirect::apply_redirect;
 use crate::resolver::{InMemoryIndex, MetadataResponse, VersionsResponse};
 use crate::{Manifest, ResolveError};
@@ -53,7 +52,7 @@ pub enum AnnotationStyle {
 #[derive(Debug)]
 pub struct ResolutionGraph {
     /// The underlying graph.
-    petgraph: petgraph::graph::Graph<ResolvedDist, Range<Version>, petgraph::Directed>,
+    petgraph: petgraph::graph::Graph<ResolvedDist, Range, petgraph::Directed>,
     /// The metadata for every distribution in this resolution.
     hashes: FxHashMap<PackageName, Vec<HashDigest>>,
     /// The enabled extras for every distribution in this resolution.
@@ -351,9 +350,7 @@ impl ResolutionGraph {
     }
 
     /// Return the underlying graph.
-    pub fn petgraph(
-        &self,
-    ) -> &petgraph::graph::Graph<ResolvedDist, Range<Version>, petgraph::Directed> {
+    pub fn petgraph(&self) -> &petgraph::graph::Graph<ResolvedDist, Range, petgraph::Directed> {
         &self.petgraph
     }
 

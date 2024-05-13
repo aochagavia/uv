@@ -8,12 +8,13 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use crate::pubgrub::Range;
 use anyhow::Result;
 use futures::{FutureExt, StreamExt};
 use itertools::Itertools;
 use pubgrub::error::PubGrubError;
-use pubgrub::range::Range;
 use pubgrub::solver::{Incompatibility, State};
+use pubgrub::version_set::VersionSet;
 use rustc_hash::{FxHashMap, FxHashSet};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, enabled, info_span, instrument, trace, warn, Instrument, Level};
@@ -629,7 +630,7 @@ impl<'a, Provider: ResolverProvider, InstalledPackages: InstalledPackagesProvide
     /// Visit the set of [`PubGrubPackage`] candidates prior to selection. This allows us to fetch
     /// metadata for all of the packages in parallel.
     async fn pre_visit<'data>(
-        packages: impl Iterator<Item = (&'data PubGrubPackage, &'data Range<Version>)>,
+        packages: impl Iterator<Item = (&'data PubGrubPackage, &'data Range)>,
         request_sink: &tokio::sync::mpsc::Sender<Request>,
     ) -> Result<(), ResolveError> {
         // Iterate over the potential packages, and fetch file metadata for any of them. These
@@ -653,7 +654,7 @@ impl<'a, Provider: ResolverProvider, InstalledPackages: InstalledPackagesProvide
     async fn choose_version(
         &self,
         package: &'a PubGrubPackage,
-        range: &Range<Version>,
+        range: &Range,
         pins: &mut FilePins,
         request_sink: &tokio::sync::mpsc::Sender<Request>,
     ) -> Result<Option<ResolverVersion>, ResolveError> {
@@ -1410,7 +1411,7 @@ pub(crate) enum Request {
     /// A request to fetch the metadata from an already-installed distribution.
     Installed(InstalledDist),
     /// A request to pre-fetch the metadata for a package and the best-guess distribution.
-    Prefetch(PackageName, Range<Version>),
+    Prefetch(PackageName, Range),
 }
 
 impl Display for Request {
@@ -1456,7 +1457,7 @@ enum Dependencies {
     /// Package dependencies are not available.
     Unavailable(UnavailableVersion),
     /// Container for all available package versions.
-    Available(Vec<(PubGrubPackage, Range<Version>)>),
+    Available(Vec<(PubGrubPackage, Range)>),
 }
 
 fn uncapitalize<T: AsRef<str>>(string: T) -> String {

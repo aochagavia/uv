@@ -1,7 +1,8 @@
 use std::cmp::min;
 
+use crate::pubgrub::Range;
 use itertools::Itertools;
-use pubgrub::range::Range;
+use pubgrub::version_set::VersionSet;
 use rustc_hash::FxHashMap;
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, trace};
@@ -18,7 +19,7 @@ enum BatchPrefetchStrategy {
     /// Go through the next versions assuming the existing selection and its constraints
     /// remain.
     Compatible {
-        compatible: Range<Version>,
+        compatible: Range,
         previous: Version,
     },
     /// We encounter cases (botocore) where the above doesn't work: Say we previously selected
@@ -48,7 +49,7 @@ impl BatchPrefetcher {
         &mut self,
         next: &PubGrubPackage,
         version: &Version,
-        current_range: &Range<Version>,
+        current_range: &Range,
         request_sink: &Sender<Request>,
         index: &InMemoryIndex,
         selector: &CandidateSelector,

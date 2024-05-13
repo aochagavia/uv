@@ -1,5 +1,6 @@
+use crate::pubgrub::Range;
 use itertools::Itertools;
-use pubgrub::range::Range;
+use pubgrub::version_set::VersionSet;
 use rustc_hash::FxHashSet;
 use tracing::warn;
 
@@ -15,7 +16,7 @@ use crate::resolver::{Locals, Urls};
 use crate::ResolveError;
 
 #[derive(Debug)]
-pub struct PubGrubDependencies(Vec<(PubGrubPackage, Range<Version>)>);
+pub struct PubGrubDependencies(Vec<(PubGrubPackage, Range)>);
 
 impl PubGrubDependencies {
     /// Generate a set of PubGrub dependencies from a set of requirements.
@@ -50,12 +51,12 @@ impl PubGrubDependencies {
     }
 
     /// Add a [`PubGrubPackage`] and [`PubGrubVersion`] range into the dependencies.
-    pub(crate) fn push(&mut self, package: PubGrubPackage, version: Range<Version>) {
+    pub(crate) fn push(&mut self, package: PubGrubPackage, version: Range) {
         self.0.push((package, version));
     }
 
     /// Iterate over the dependencies.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &(PubGrubPackage, Range<Version>)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &(PubGrubPackage, Range)> {
         self.0.iter()
     }
 }
@@ -71,7 +72,7 @@ fn add_requirements(
     urls: &Urls,
     locals: &Locals,
     env: Option<&MarkerEnvironment>,
-    dependencies: &mut Vec<(PubGrubPackage, Range<Version>)>,
+    dependencies: &mut Vec<(PubGrubPackage, Range)>,
     seen: &mut FxHashSet<ExtraName>,
 ) -> Result<(), ResolveError> {
     // Iterate over all declared requirements.
@@ -172,7 +173,7 @@ fn add_requirements(
 }
 
 /// Convert a [`PubGrubDependencies`] to a [`DependencyConstraints`].
-impl From<PubGrubDependencies> for Vec<(PubGrubPackage, Range<Version>)> {
+impl From<PubGrubDependencies> for Vec<(PubGrubPackage, Range)> {
     fn from(dependencies: PubGrubDependencies) -> Self {
         dependencies.0
     }
@@ -184,7 +185,7 @@ fn to_pubgrub(
     extra: Option<ExtraName>,
     urls: &Urls,
     locals: &Locals,
-) -> Result<(PubGrubPackage, Range<Version>), ResolveError> {
+) -> Result<(PubGrubPackage, Range), ResolveError> {
     match &requirement.source {
         RequirementSource::Registry { specifier, .. } => {
             // TODO(konsti): We're currently losing the index information here, but we need
