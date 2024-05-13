@@ -28,7 +28,7 @@ use uv_dispatch::BuildDispatch;
 use uv_distribution::DistributionDatabase;
 use uv_fs::Simplified;
 use uv_installer::{is_dynamic, Downloader, Plan, Planner, ResolvedEditable, SitePackages};
-use uv_interpreter::{Interpreter, PythonEnvironment, PythonVersion, Target};
+use uv_interpreter::{Interpreter, PythonEnvironment, PythonVersion, SystemPython, Target};
 use uv_requirements::{
     ExtrasSpecification, NamedRequirementsResolver, RequirementsSource, RequirementsSpecification,
     SourceTreeResolver,
@@ -105,13 +105,13 @@ pub(crate) async fn pip_sync(
     }
 
     // Detect the current Python interpreter.
-    let venv = if let Some(python) = python.as_ref() {
-        PythonEnvironment::from_requested_python(python, &cache)?
-    } else if system {
-        PythonEnvironment::from_default_python(&cache)?
+    let system = if system {
+        SystemPython::Required
     } else {
-        PythonEnvironment::from_virtualenv(&cache)?
+        SystemPython::Disallowed
     };
+    let venv = PythonEnvironment::find(python.as_deref(), system, &cache)?;
+
     debug!(
         "Using Python {} environment at {}",
         venv.interpreter().python_version(),

@@ -51,7 +51,9 @@ winapi = { workspace = true }
 
 [dev-dependencies]
 anyhow = { version = "1.0.80" }
+assert_fs = { version = "1.1.1" }
 indoc = { version = "2.0.4" }
 insta = { version = "1.36.1", features = ["filters"] }
 itertools = { version = "0.12.1" }
 tempfile = { version = "3.9.0" }
+temp-env = { version = "0.3.6" }

@@ -39,15 +39,6 @@ pub enum Error {
     ParsePyVenvCfg(PathBuf, #[source] io::Error),
 }
 
-/// Locate the current virtual environment.
-pub(crate) fn detect_virtualenv() -> Result<Option<PathBuf>, Error> {
-    let from_env = virtualenv_from_env();
-    if from_env.is_some() {
-        return Ok(from_env);
-    }
-    virtualenv_from_working_dir()
-}
-
 /// Locate an active virtual environment by inspecting environment variables.
 ///
 /// Supports `VIRTUAL_ENV` and `CONDA_PREFIX`.
@@ -105,9 +96,9 @@ pub(crate) fn virtualenv_python_executable(venv: impl AsRef<Path>) -> PathBuf {
     let venv = venv.as_ref();
     if cfg!(windows) {
         // Search for `python.exe` in the `Scripts` directory.
-        let executable = venv.join("Scripts").join("python.exe");
-        if executable.exists() {
-            return executable;
+        let default_executable = venv.join("Scripts").join("python.exe");
+        if default_executable.exists() {
+            return default_executable;
         }
 
         // Apparently, Python installed via msys2 on Windows _might_ produce a POSIX-like layout.
@@ -118,7 +109,13 @@ pub(crate) fn virtualenv_python_executable(venv: impl AsRef<Path>) -> PathBuf {
         }
 
         // Fallback for Conda environments.
-        venv.join("python.exe")
+        let executable = venv.join("python.exe");
+        if executable.exists() {
+            return executable;
+        }
+
+        // If none of these exist, return the standard location
+        default_executable
     } else {
         // Search for `python` in the `bin` directory.
         venv.join("bin").join("python")

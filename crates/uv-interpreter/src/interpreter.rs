@@ -1,10 +1,12 @@
+use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, ExitStatus};
 
 use configparser::ini::Ini;
 use fs_err as fs;
 use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 use tracing::{debug, warn};
 
 use cache_key::digest;
@@ -17,7 +19,7 @@ use pypi_types::Scheme;
 use uv_cache::{Cache, CacheBucket, CachedByTimestamp, Freshness, Timestamp};
 use uv_fs::{write_atomic_sync, PythonExt, Simplified};
 
-use crate::{Error, PythonVersion, Target, VirtualEnvironment};
+use crate::{PythonVersion, Target, VirtualEnvironment};
 
 /// A Python executable and its associated platform markers.
 #[derive(Debug, Clone)]
@@ -396,6 +398,33 @@ impl ExternallyManaged {
     pub fn into_error(self) -> Option<String> {
         self.error
     }
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    #[error("Failed to query Python interpreter at `{interpreter}`")]
+    PythonSubcommandLaunch {
+        interpreter: PathBuf,
+        #[source]
+        err: io::Error,
+    },
+    #[error("{message} with {exit_code}\n--- stdout:\n{stdout}\n--- stderr:\n{stderr}\n---")]
+    PythonSubcommandOutput {
+        message: String,
+        exit_code: ExitStatus,
+        stdout: String,
+        stderr: String,
+    },
+    #[error("Can't use Python at `{interpreter}`")]
+    QueryScript {
+        #[source]
+        err: InterpreterInfoError,
+        interpreter: PathBuf,
+    },
+    #[error("Failed to write to cache")]
+    Encode(#[from] rmp_serde::encode::Error),
 }
 
 #[derive(Debug, Deserialize, Serialize)]

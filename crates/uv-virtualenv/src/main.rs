@@ -12,7 +12,9 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, EnvFilter};
 
 use uv_cache::Cache;
-use uv_interpreter::{find_default_python, find_requested_python};
+use uv_interpreter::{
+    find_default_interpreter, find_interpreter, InterpreterRequest, SourceSelector,
+};
 use uv_virtualenv::{create_bare_venv, Prompt};
 
 #[derive(Parser, Debug)]
@@ -34,13 +36,14 @@ fn run() -> Result<(), uv_virtualenv::Error> {
     } else {
         Cache::from_path(".cache")?
     };
-    let interpreter = if let Some(python_request) = &cli.python {
-        find_requested_python(python_request, &cache)?.ok_or(
-            uv_interpreter::Error::NoSuchPython(python_request.to_string()),
-        )?
+    let interpreter = if let Some(python) = cli.python.as_ref() {
+        let request = InterpreterRequest::parse(python);
+        let sources = SourceSelector::from_env(uv_interpreter::SystemPython::Allowed);
+        find_interpreter(&request, &sources, &cache)??
     } else {
-        find_default_python(&cache)?
-    };
+        find_default_interpreter(&cache)??
+    }
+    .into_interpreter();
     create_bare_venv(
         &location,
         &interpreter,
