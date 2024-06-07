@@ -35,6 +35,7 @@ pub struct InstalledRegistryDist {
     pub name: PackageName,
     pub version: Version,
     pub path: PathBuf,
+    pub metadata: Option<Box<pypi_types::Metadata23>>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +46,7 @@ pub struct InstalledDirectUrlDist {
     pub url: Url,
     pub editable: bool,
     pub path: PathBuf,
+    pub metadata: Option<Box<pypi_types::Metadata23>>,
 }
 
 #[derive(Debug, Clone)]
@@ -99,6 +101,7 @@ impl InstalledDist {
                         direct_url: Box::new(direct_url),
                         url,
                         path: path.to_path_buf(),
+                        metadata: None,
                     }))),
                     Err(err) => {
                         warn!("Failed to parse direct URL: {err}");
@@ -106,6 +109,7 @@ impl InstalledDist {
                             name,
                             version,
                             path: path.to_path_buf(),
+                            metadata: None,
                         })))
                     }
                 }
@@ -114,6 +118,7 @@ impl InstalledDist {
                     name,
                     version,
                     path: path.to_path_buf(),
+                    metadata: None,
                 })))
             };
         }
@@ -252,7 +257,12 @@ impl InstalledDist {
     /// Read the `METADATA` file from a `.dist-info` directory.
     pub fn metadata(&self) -> Result<pypi_types::Metadata23> {
         match self {
-            Self::Registry(_) | Self::Url(_) => {
+            Self::Registry(InstalledRegistryDist { metadata, .. })
+            | Self::Url(InstalledDirectUrlDist { metadata, .. }) => {
+                if let Some(metadata) = metadata {
+                    return Ok((**metadata).clone());
+                }
+
                 let path = self.path().join("METADATA");
                 let contents = fs::read(&path)?;
                 // TODO(zanieb): Update this to use thiserror so we can unpack parse errors downstream
