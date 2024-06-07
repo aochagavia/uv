@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::io::BufReader;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::OnceLock;
@@ -124,6 +125,7 @@ pub struct InstalledRegistryDist {
     pub path: Box<Path>,
     pub cache_info: Option<CacheInfo>,
     pub build_info: Option<BuildInfo>,
+    pub metadata: Option<MyResolutionMetadata>,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -136,6 +138,27 @@ pub struct InstalledDirectUrlDist {
     pub path: Box<Path>,
     pub cache_info: Option<CacheInfo>,
     pub build_info: Option<BuildInfo>,
+    pub metadata: Option<MyResolutionMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MyResolutionMetadata(pub Box<uv_pypi_types::ResolutionMetadata>);
+
+impl Hash for MyResolutionMetadata {
+    fn hash<H: Hasher>(&self, _state: &mut H) {
+        // noop
+    }
+}
+
+impl PartialEq for MyResolutionMetadata {
+    fn eq(&self, other: &Self) -> bool {
+        let this = &self.0;
+        let uv_pypi_types::ResolutionMetadata { name, version, requires_dist, requires_python, provides_extras, dynamic } = &*other.0;
+        &this.name == name && &this.version == version && &this.requires_dist == requires_dist && &this.requires_python == requires_python && &this.provides_extras == provides_extras && &this.dynamic == dynamic
+    }
+}
+
+impl Eq for MyResolutionMetadata {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -196,7 +219,8 @@ impl InstalledDist {
                             path: path.to_path_buf().into_boxed_path(),
                             cache_info,
                             build_info,
-                        },
+                            metadata: None,
+                        }
                     )))),
                     Err(err) => {
                         warn!("Failed to parse direct URL: {err}");
@@ -207,6 +231,7 @@ impl InstalledDist {
                                 path: path.to_path_buf().into_boxed_path(),
                                 cache_info,
                                 build_info,
+                                metadata: None,
                             },
                         ))))
                     }
@@ -219,6 +244,7 @@ impl InstalledDist {
                         path: path.to_path_buf().into_boxed_path(),
                         cache_info,
                         build_info,
+                        metadata: None,
                     },
                 ))))
             };
@@ -436,7 +462,12 @@ impl InstalledDist {
         }
 
         let metadata = match &self.kind {
-            InstalledDistKind::Registry(_) | InstalledDistKind::Url(_) => {
+            InstalledDistKind::Registry(InstalledRegistryDist { metadata, .. })
+            | InstalledDistKind::Url(InstalledDirectUrlDist { metadata, .. }) => {
+                if let Some(metadata) = metadata {
+                    return Ok(&metadata.0);
+                }
+
                 let path = self.install_path().join("METADATA");
                 let contents = fs::read(&path)?;
                 // TODO(zanieb): Update this to use thiserror so we can unpack parse errors downstream
